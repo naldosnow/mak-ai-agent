@@ -1,0 +1,21 @@
+{
+  "name": "mak-ai-agent",
+  "main": "worker.js",
+  "compatibility_date": "2026-04-14",
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PATIENT_AGENT",
+        "class_name": "PatientAgent"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PatientAgent"]
+    }
+  ]
+}
