@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    const id = env.PATIENT_AGENT.idFromName("demo-patient");
+    const id = env.PATIENT_AGENT.idFromName("demo-patient-v2");
     const stub = env.PATIENT_AGENT.get(id);
 
     if (url.pathname === "/") {
