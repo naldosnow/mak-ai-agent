@@ -1,12 +1,7 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
-    // Move from a single hardcoded object to a query-driven object identity.
-    // Example:
-    //   /api/patient?id=demo-patient-v3
-    //   /api/patient?id=john-doe
-    const patientObjectId = url.searchParams.get("id") || "demo-patient-v3";
+    const patientObjectId = url.searchParams.get("id") || "demo-patient-v4";
 
     const id = env.PATIENT_AGENT.idFromName(patientObjectId);
     const stub = env.PATIENT_AGENT.get(id);
@@ -17,7 +12,7 @@ export default {
         <html>
           <head>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title>MAK Beta V3</title>
+            <title>MAK Beta V4</title>
             <style>
               body {
                 font-family: Arial, sans-serif;
@@ -58,19 +53,30 @@ export default {
           </head>
           <body>
             <div class="card">
-              <h1>MAK Beta V3</h1>
-              <p>Governed access, break-glass, misuse flagging, appointments, reminders, and role-based visibility.</p>
-              <p class="muted">Current object id comes from the URL query param <code>?id=...</code>. Default: <code>demo-patient-v3</code></p>
+              <h1>MAK Beta V4</h1>
+              <p>Governed access, provider allowlist, break-glass, appointments, reminders, and notification hooks.</p>
+              <p class="muted">Use <code>?id=...</code> to isolate patient objects. Default: <code>demo-patient-v4</code></p>
             </div>
 
             <div class="card">
               <h2>System</h2>
               <label>Patient/Object ID</label>
-              <input id="objectId" value="demo-patient-v3" />
+              <input id="objectId" value="demo-patient-v4" />
               <button onclick="goHome()">Reload with current object id</button>
               <button onclick="callRoute('/api/init', 'POST')">POST /api/init</button>
               <button onclick="callRoute('/api/patient', 'GET')">GET /api/patient</button>
               <button onclick="callRoute('/api/audit', 'GET')">GET /api/audit</button>
+            </div>
+
+            <div class="card">
+              <h2>Providers</h2>
+              <input id="providerId" value="dr-demo-001" />
+              <select id="providerRole">
+                <option value="authorized_provider">authorized_provider</option>
+                <option value="admin_auditor">admin_auditor</option>
+              </select>
+              <button onclick="postAddProvider()">POST /api/providers/add</button>
+              <button onclick="callRoute('/api/providers/list', 'GET')">GET /api/providers/list</button>
             </div>
 
             <div class="card">
@@ -96,7 +102,7 @@ export default {
             <div class="card">
               <h2>Appointments</h2>
               <input id="apptTitle" value="Primary Care Follow-up" />
-              <input id="apptWhen" value="2026-04-16T14:00:00.000Z" />
+              <input id="apptWhen" value="2026-04-18T14:00:00.000Z" />
               <input id="apptLocation" value="Clinic A - Room 3" />
               <textarea id="apptNotes">Bring ID and medication list.</textarea>
               <button onclick="postAppointment()">POST /api/appointments</button>
@@ -106,13 +112,14 @@ export default {
               <button onclick="postCancelAppointment()">POST /api/appointments/cancel</button>
               <button onclick="postRescheduleAppointment()">POST /api/appointments/reschedule-request</button>
               <button onclick="callRoute('/api/reminders/preview', 'GET')">GET /api/reminders/preview</button>
+              <button onclick="callRoute('/api/reminders/run-now', 'POST')">POST /api/reminders/run-now</button>
             </div>
 
             <pre id="out">Ready.</pre>
 
             <script>
               function getId() {
-                return document.getElementById('objectId').value || 'demo-patient-v3';
+                return document.getElementById('objectId').value || 'demo-patient-v4';
               }
 
               function withId(path) {
@@ -224,6 +231,19 @@ export default {
 
                 await render(res);
               }
+
+              async function postAddProvider() {
+                const providerId = document.getElementById('providerId').value;
+                const providerRole = document.getElementById('providerRole').value;
+
+                const res = await fetch(withId('/api/providers/add'), {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ providerId, providerRole })
+                });
+
+                await render(res);
+              }
             </script>
           </body>
         </html>
@@ -236,6 +256,19 @@ export default {
 
     if (url.pathname === "/api/patient" && request.method === "GET") {
       return stub.fetch("https://internal/patient");
+    }
+
+    if (url.pathname === "/api/providers/add" && request.method === "POST") {
+      const body = await request.text();
+      return stub.fetch("https://internal/providers/add", {
+        method: "POST",
+        headers: request.headers,
+        body
+      });
+    }
+
+    if (url.pathname === "/api/providers/list" && request.method === "GET") {
+      return stub.fetch("https://internal/providers/list");
     }
 
     if (url.pathname === "/api/access" && request.method === "POST") {
@@ -305,6 +338,10 @@ export default {
       return stub.fetch("https://internal/reminders/preview");
     }
 
+    if (url.pathname === "/api/reminders/run-now" && request.method === "POST") {
+      return stub.fetch("https://internal/reminders/run-now", { method: "POST" });
+    }
+
     if (url.pathname === "/api/audit" && request.method === "GET") {
       return stub.fetch("https://internal/audit");
     }
@@ -325,44 +362,14 @@ export class PatientAgent {
     return new Date().toISOString();
   }
 
-  // Cloudflare Durable Objects support Alarms, which are appropriate for
-  // per-object future work like reminders and expiry tasks.
   async alarm() {
-    const dueRows = [
-      ...this.sql.exec(
-        `SELECT id, appointment_id, remind_at, sent_at
-         FROM reminders
-         WHERE sent_at IS NULL
-           AND remind_at <= ?
-         ORDER BY remind_at ASC`,
-        this.now()
-      )
-    ];
-
-    for (const row of dueRows) {
-      const sentAt = this.now();
-
-      this.sql.exec(
-        `UPDATE reminders
-         SET sent_at = ?
-         WHERE id = ?`,
-        sentAt,
-        row.id
-      );
-
-      this.log("reminder_due", "system", {
-        reminder_id: row.id,
-        appointment_id: row.appointment_id,
-        remind_at: row.remind_at,
-        sent_at: sentAt
-      });
-    }
-
+    await this.processDueReminders();
+    await this.expireBreakGlassIfNeeded();
     await this.scheduleNextAlarm();
   }
 
   async scheduleNextAlarm() {
-    const nextRows = [
+    const nextReminder = [
       ...this.sql.exec(
         `SELECT remind_at
          FROM reminders
@@ -370,20 +377,34 @@ export class PatientAgent {
          ORDER BY remind_at ASC
          LIMIT 1`
       )
-    ];
+    ][0];
 
-    if (!nextRows.length) {
-      const current = await this.ctx.storage.getAlarm();
-      if (current !== null) {
-        await this.ctx.storage.deleteAlarm();
+    const patient = this.getPatientRow();
+    const nextBreakGlassExpiry =
+      patient && patient.emergency_access_until
+        ? new Date(String(patient.emergency_access_until)).getTime()
+        : null;
+
+    let nextTs = null;
+
+    if (nextReminder && nextReminder.remind_at) {
+      const reminderTs = new Date(String(nextReminder.remind_at)).getTime();
+      if (!Number.isNaN(reminderTs)) nextTs = reminderTs;
+    }
+
+    if (nextBreakGlassExpiry && !Number.isNaN(nextBreakGlassExpiry)) {
+      if (nextTs === null || nextBreakGlassExpiry < nextTs) {
+        nextTs = nextBreakGlassExpiry;
       }
+    }
+
+    if (nextTs === null) {
+      const existing = await this.ctx.storage.getAlarm();
+      if (existing !== null) await this.ctx.storage.deleteAlarm();
       return;
     }
 
-    const nextAt = new Date(String(nextRows[0].remind_at)).getTime();
-    if (!Number.isNaN(nextAt)) {
-      await this.ctx.storage.setAlarm(nextAt);
-    }
+    await this.ctx.storage.setAlarm(nextTs);
   }
 
   initTables() {
@@ -397,6 +418,14 @@ export class PatientAgent {
         init_locked INTEGER DEFAULT 0,
         created_at TEXT,
         updated_at TEXT
+      )
+    `);
+
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS provider_allowlist (
+        provider_id TEXT PRIMARY KEY,
+        provider_role TEXT,
+        created_at TEXT
       )
     `);
 
@@ -466,9 +495,7 @@ export class PatientAgent {
 
   listAppointments() {
     return [
-      ...this.sql.exec(
-        `SELECT * FROM appointments ORDER BY datetime ASC`
-      )
+      ...this.sql.exec(`SELECT * FROM appointments ORDER BY datetime ASC`)
     ].map((row) => ({
       id: row.id,
       title: row.title,
@@ -478,6 +505,20 @@ export class PatientAgent {
       status: row.status,
       created_at: row.created_at,
       updated_at: row.updated_at
+    }));
+  }
+
+  listProviders() {
+    return [
+      ...this.sql.exec(
+        `SELECT provider_id, provider_role, created_at
+         FROM provider_allowlist
+         ORDER BY provider_id ASC`
+      )
+    ].map((row) => ({
+      provider_id: row.provider_id,
+      provider_role: row.provider_role,
+      created_at: row.created_at
     }));
   }
 
@@ -536,12 +577,58 @@ export class PatientAgent {
     return this.getPatientRow();
   }
 
+  ensureSeedProviders() {
+    const rows = [...this.sql.exec(`SELECT COUNT(*) AS c FROM provider_allowlist`)];
+    const count = Number(rows[0]?.c ?? 0);
+
+    if (count === 0) {
+      const now = this.now();
+
+      this.sql.exec(
+        `INSERT OR REPLACE INTO provider_allowlist (provider_id, provider_role, created_at)
+         VALUES (?, ?, ?)`,
+        "dr-demo-001",
+        "authorized_provider",
+        now
+      );
+
+      this.sql.exec(
+        `INSERT OR REPLACE INTO provider_allowlist (provider_id, provider_role, created_at)
+         VALUES (?, ?, ?)`,
+        "admin-demo-001",
+        "admin_auditor",
+        now
+      );
+    }
+  }
+
+  providerAllowed(providerId, providerRole) {
+    const rows = [
+      ...this.sql.exec(
+        `SELECT provider_id, provider_role
+         FROM provider_allowlist
+         WHERE provider_id = ?`,
+        providerId
+      )
+    ];
+
+    if (!rows.length) return false;
+    return String(rows[0].provider_role) === String(providerRole);
+  }
+
   appointmentId() {
     return crypto.randomUUID();
   }
 
   reminderId() {
     return crypto.randomUUID();
+  }
+
+  getAppointment(appointmentId) {
+    const rows = [
+      ...this.sql.exec(`SELECT * FROM appointments WHERE id = ?`, appointmentId)
+    ];
+    return rows[0] || null;
   }
 
   async fetch(request) {
@@ -553,6 +640,14 @@ export class PatientAgent {
 
     if (url.pathname === "/patient" && request.method === "GET") {
       return this.handlePatient();
+    }
+
+    if (url.pathname === "/providers/add" && request.method === "POST") {
+      return this.handleAddProvider(request);
+    }
+
+    if (url.pathname === "/providers/list" && request.method === "GET") {
+      return this.handleListProviders();
     }
 
     if (url.pathname === "/access" && request.method === "POST") {
@@ -587,6 +682,10 @@ export class PatientAgent {
       return this.handleReminderPreview();
     }
 
+    if (url.pathname === "/reminders/run-now" && request.method === "POST") {
+      return this.handleRunRemindersNow();
+    }
+
     if (url.pathname === "/audit" && request.method === "GET") {
       return this.handleAudit();
     }
@@ -596,6 +695,7 @@ export class PatientAgent {
 
   async handleInit() {
     const patient = this.ensurePatientExists();
+    this.ensureSeedProviders();
 
     if (Number(patient.init_locked) === 1) {
       return Response.json(
@@ -620,12 +720,16 @@ export class PatientAgent {
     );
 
     this.log("system_init", "system", {
-      locked_after_init: true
+      locked_after_init: true,
+      seeded_default_providers: true
     });
+
+    await this.scheduleNextAlarm();
 
     return Response.json({
       ok: true,
-      patient: this.serializePatient(this.getPatientRow())
+      patient: this.serializePatient(this.getPatientRow()),
+      providers: this.listProviders()
     });
   }
 
@@ -636,21 +740,66 @@ export class PatientAgent {
       ok: true,
       patient: this.serializePatient(patient),
       appointments: this.listAppointments(),
-      recent_access: this.listRecentAccess(20)
+      recent_access: this.listRecentAccess(20),
+      providers: this.listProviders()
     });
   }
 
-  async handleAccess(request) {
+  async handleAddProvider(request) {
     this.ensurePatientExists();
 
     let body = {};
     try {
       body = await request.json();
     } catch {
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const providerId = (body.providerId || "").trim();
+    const providerRole = (body.providerRole || "").trim();
+
+    if (!providerId || !providerRole) {
       return Response.json(
-        { ok: false, error: "Invalid JSON" },
+        { ok: false, error: "providerId and providerRole required" },
         { status: 400 }
       );
+    }
+
+    this.sql.exec(
+      `INSERT OR REPLACE INTO provider_allowlist (provider_id, provider_role, created_at)
+       VALUES (?, ?, ?)`,
+      providerId,
+      providerRole,
+      this.now()
+    );
+
+    this.log("provider_added", "system", {
+      provider_id: providerId,
+      provider_role: providerRole
+    });
+
+    return Response.json({
+      ok: true,
+      providers: this.listProviders()
+    });
+  }
+
+  async handleListProviders() {
+    return Response.json({
+      ok: true,
+      providers: this.listProviders()
+    });
+  }
+
+  async handleAccess(request) {
+    this.ensurePatientExists();
+    this.ensureSeedProviders();
+
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const role = body.role || "unauthorized";
@@ -663,14 +812,14 @@ export class PatientAgent {
       reason = "patient_self_access";
     }
 
-    if (role === "authorized_provider") {
+    if (role === "authorized_provider" && this.providerAllowed(actor, "authorized_provider")) {
       allowed = true;
-      reason = "authorized_provider_access";
+      reason = "provider_allowlist_match";
     }
 
-    if (role === "admin_auditor") {
+    if (role === "admin_auditor" && this.providerAllowed(actor, "admin_auditor")) {
       allowed = true;
-      reason = "audit_oversight_access";
+      reason = "auditor_allowlist_match";
     }
 
     if (!allowed) {
@@ -737,15 +886,13 @@ export class PatientAgent {
 
   async handleView(request) {
     this.ensurePatientExists();
+    this.ensureSeedProviders();
 
     let body = {};
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const role = body.role || "unauthorized";
@@ -772,7 +919,7 @@ export class PatientAgent {
       });
     }
 
-    if (role === "authorized_provider") {
+    if (role === "authorized_provider" && this.providerAllowed(actor, "authorized_provider")) {
       return Response.json({
         ok: true,
         role,
@@ -795,7 +942,7 @@ export class PatientAgent {
       });
     }
 
-    if (role === "admin_auditor") {
+    if (role === "admin_auditor" && this.providerAllowed(actor, "admin_auditor")) {
       return Response.json({
         ok: true,
         role,
@@ -827,20 +974,14 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const actor = body.actor || "unknown-emergency-actor";
     const reason = (body.reason || "").trim();
 
     if (!reason) {
-      return Response.json(
-        { ok: false, error: "Reason required" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Reason required" }, { status: 400 });
     }
 
     const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
@@ -856,6 +997,7 @@ export class PatientAgent {
     );
 
     this.log("break_glass", actor, { reason, expires });
+    await this.scheduleNextAlarm();
 
     return Response.json({
       ok: true,
@@ -873,10 +1015,7 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const title = (body.title || "").trim() || "Untitled Appointment";
@@ -908,26 +1047,28 @@ export class PatientAgent {
       now
     );
 
-    // Schedule one reminder 24 hours before if that time is still in the future.
     const apptMs = new Date(datetime).getTime();
-    const reminderMs = apptMs - (24 * 60 * 60 * 1000);
+    const reminderTargets = [
+      apptMs - (24 * 60 * 60 * 1000),
+      apptMs - (2 * 60 * 60 * 1000)
+    ];
 
-    if (!Number.isNaN(apptMs) && reminderMs > Date.now()) {
-      const reminderAt = new Date(reminderMs).toISOString();
-
-      this.sql.exec(
-        `INSERT INTO reminders (
-          id, appointment_id, remind_at, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?)`,
-        this.reminderId(),
-        apptId,
-        reminderAt,
-        null,
-        now
-      );
-
-      await this.scheduleNextAlarm();
+    for (const target of reminderTargets) {
+      if (!Number.isNaN(target) && target > Date.now()) {
+        this.sql.exec(
+          `INSERT INTO reminders (
+            id, appointment_id, remind_at, sent_at, created_at
+          ) VALUES (?, ?, ?, ?, ?)`,
+          this.reminderId(),
+          apptId,
+          new Date(target).toISOString(),
+          null,
+          now
+        );
+      }
     }
+
+    await this.scheduleNextAlarm();
 
     this.log("appointment_created", "system", {
       appointment_id: apptId,
@@ -938,23 +1079,42 @@ export class PatientAgent {
     return Response.json({
       ok: true,
       appointment: this.listAppointments().find((a) => a.id === apptId),
-      reminders_preview: [
-        ...this.sql.exec(
-          `SELECT id, appointment_id, remind_at, sent_at
-           FROM reminders
-           WHERE appointment_id = ?
-           ORDER BY remind_at ASC`,
-          apptId
-        )
-      ]
+      reminders_preview: this.listReminderRows(apptId)
     });
   }
 
-  getAppointment(appointmentId) {
-    const rows = [
-      ...this.sql.exec(`SELECT * FROM appointments WHERE id = ?`, appointmentId)
-    ];
-    return rows[0] || null;
+  listReminderRows(appointmentId = null) {
+    if (appointmentId) {
+      return [
+        ...this.sql.exec(
+          `SELECT id, appointment_id, remind_at, sent_at, created_at
+           FROM reminders
+           WHERE appointment_id = ?
+           ORDER BY remind_at ASC`,
+          appointmentId
+        )
+      ].map((row) => ({
+        id: row.id,
+        appointment_id: row.appointment_id,
+        remind_at: row.remind_at,
+        sent_at: row.sent_at,
+        created_at: row.created_at
+      }));
+    }
+
+    return [
+      ...this.sql.exec(
+        `SELECT id, appointment_id, remind_at, sent_at, created_at
+         FROM reminders
+         ORDER BY remind_at ASC`
+      )
+    ].map((row) => ({
+      id: row.id,
+      appointment_id: row.appointment_id,
+      remind_at: row.remind_at,
+      sent_at: row.sent_at,
+      created_at: row.created_at
+    }));
   }
 
   async handleConfirmAppointment(request) {
@@ -962,20 +1122,14 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
 
     if (!appt) {
-      return Response.json(
-        { ok: false, error: "Appointment not found" },
-        { status: 404 }
-      );
+      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
     }
 
     this.sql.exec(
@@ -1000,20 +1154,14 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
 
     if (!appt) {
-      return Response.json(
-        { ok: false, error: "Appointment not found" },
-        { status: 404 }
-      );
+      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
     }
 
     this.sql.exec(
@@ -1038,20 +1186,14 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
 
     if (!appt) {
-      return Response.json(
-        { ok: false, error: "Appointment not found" },
-        { status: 404 }
-      );
+      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
     }
 
     this.sql.exec(
@@ -1072,28 +1214,122 @@ export class PatientAgent {
   }
 
   async handleReminderPreview() {
-    const rows = [
+    return Response.json({
+      ok: true,
+      reminders: this.listReminderRows()
+    });
+  }
+
+  async handleRunRemindersNow() {
+    const processed = await this.processDueReminders();
+    await this.expireBreakGlassIfNeeded();
+    await this.scheduleNextAlarm();
+
+    return Response.json({
+      ok: true,
+      processed
+    });
+  }
+
+  async processDueReminders() {
+    const dueRows = [
       ...this.sql.exec(
         `SELECT r.id, r.appointment_id, r.remind_at, r.sent_at, a.title, a.datetime, a.location, a.status
          FROM reminders r
          LEFT JOIN appointments a ON a.id = r.appointment_id
-         ORDER BY r.remind_at ASC`
+         WHERE r.sent_at IS NULL
+           AND r.remind_at <= ?
+         ORDER BY r.remind_at ASC`,
+        this.now()
       )
     ];
 
-    return Response.json({
-      ok: true,
-      reminders: rows.map((row) => ({
-        id: row.id,
+    const processed = [];
+
+    for (const row of dueRows) {
+      const sentAt = this.now();
+
+      this.sql.exec(
+        `UPDATE reminders
+         SET sent_at = ?
+         WHERE id = ?`,
+        sentAt,
+        row.id
+      );
+
+      const payload = {
+        reminder_id: row.id,
         appointment_id: row.appointment_id,
         remind_at: row.remind_at,
-        sent_at: row.sent_at,
+        sent_at: sentAt,
         title: row.title,
         datetime: row.datetime,
         location: row.location,
         status: row.status
-      }))
-    });
+      };
+
+      let delivery = {
+        mode: "local_log_only",
+        delivered: false
+      };
+
+      if (this.env.NOTIFY_WEBHOOK_URL) {
+        try {
+          const res = await fetch(this.env.NOTIFY_WEBHOOK_URL, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          delivery = {
+            mode: "webhook",
+            delivered: res.ok,
+            status: res.status
+          };
+        } catch (e) {
+          delivery = {
+            mode: "webhook",
+            delivered: false,
+            error: String(e)
+          };
+        }
+      }
+
+      this.log("reminder_due", "system", {
+        ...payload,
+        delivery
+      });
+
+      processed.push({
+        ...payload,
+        delivery
+      });
+    }
+
+    return processed;
+  }
+
+  async expireBreakGlassIfNeeded() {
+    const patient = this.getPatientRow();
+    if (!patient || !patient.emergency_access_until) return false;
+
+    const expiryTs = new Date(String(patient.emergency_access_until)).getTime();
+    if (Number.isNaN(expiryTs)) return false;
+    if (expiryTs > Date.now()) return false;
+
+    this.sql.exec(
+      `UPDATE patient
+       SET emergency_access_until = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+      this.now(),
+      "demo"
+    );
+
+    this.log("break_glass_expired", "system", {});
+    return true;
   }
 
   async handleAudit() {
