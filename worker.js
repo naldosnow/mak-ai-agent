@@ -1,7 +1,7 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const patientObjectId = url.searchParams.get("id") || "demo-patient-v4";
+    const patientObjectId = url.searchParams.get("id") || "demo-patient-v5";
 
     const id = env.PATIENT_AGENT.idFromName(patientObjectId);
     const stub = env.PATIENT_AGENT.get(id);
@@ -12,60 +12,45 @@ export default {
         <html>
           <head>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title>MAK Beta V4</title>
+            <title>MAK Beta V5</title>
             <style>
-              body {
-                font-family: Arial, sans-serif;
-                max-width: 1000px;
-                margin: 0 auto;
-                padding: 20px;
-                line-height: 1.45;
-              }
-              .card {
-                border: 1px solid #ccc;
-                border-radius: 12px;
-                padding: 20px;
-                margin-bottom: 16px;
-              }
-              button, select, input, textarea {
-                width: 100%;
-                margin: 8px 0;
-                padding: 12px;
-                font-size: 16px;
-                box-sizing: border-box;
-              }
-              textarea {
-                min-height: 90px;
-              }
-              pre {
-                background: #111;
-                color: #f1f1f1;
-                padding: 12px;
-                border-radius: 10px;
-                white-space: pre-wrap;
-                word-break: break-word;
-              }
-              .muted {
-                color: #555;
-                font-size: 14px;
-              }
+              body { font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; line-height: 1.45; }
+              .card { border: 1px solid #ccc; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+              button, select, input, textarea { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; box-sizing: border-box; }
+              textarea { min-height: 90px; }
+              pre { background: #111; color: #f1f1f1; padding: 12px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+              .muted { color: #555; font-size: 14px; }
             </style>
           </head>
           <body>
             <div class="card">
-              <h1>MAK Beta V4</h1>
-              <p>Governed access, provider allowlist, break-glass, appointments, reminders, and notification hooks.</p>
-              <p class="muted">Use <code>?id=...</code> to isolate patient objects. Default: <code>demo-patient-v4</code></p>
+              <h1>MAK Beta V5</h1>
+              <p>Provider allowlist, workflow state guards, patient profile/contact fields, reminders, and stricter break-glass policy.</p>
+              <p class="muted">Use <code>?id=...</code> to isolate patient objects. Default: <code>demo-patient-v5</code></p>
             </div>
 
             <div class="card">
               <h2>System</h2>
               <label>Patient/Object ID</label>
-              <input id="objectId" value="demo-patient-v4" />
+              <input id="objectId" value="demo-patient-v5" />
               <button onclick="goHome()">Reload with current object id</button>
               <button onclick="callRoute('/api/init', 'POST')">POST /api/init</button>
               <button onclick="callRoute('/api/patient', 'GET')">GET /api/patient</button>
               <button onclick="callRoute('/api/audit', 'GET')">GET /api/audit</button>
+            </div>
+
+            <div class="card">
+              <h2>Patient Profile</h2>
+              <input id="fullName" value="Demo Patient" />
+              <input id="email" value="demo.patient@example.com" />
+              <input id="phone" value="+17875550199" />
+              <select id="preferredChannel">
+                <option value="email">email</option>
+                <option value="sms">sms</option>
+                <option value="none">none</option>
+              </select>
+              <button onclick="postProfile()">POST /api/patient/profile</button>
+              <button onclick="callRoute('/api/patient/profile', 'GET')">GET /api/patient/profile</button>
             </div>
 
             <div class="card">
@@ -102,7 +87,7 @@ export default {
             <div class="card">
               <h2>Appointments</h2>
               <input id="apptTitle" value="Primary Care Follow-up" />
-              <input id="apptWhen" value="2026-04-18T14:00:00.000Z" />
+              <input id="apptWhen" value="2026-04-19T14:00:00.000Z" />
               <input id="apptLocation" value="Clinic A - Room 3" />
               <textarea id="apptNotes">Bring ID and medication list.</textarea>
               <button onclick="postAppointment()">POST /api/appointments</button>
@@ -119,7 +104,7 @@ export default {
 
             <script>
               function getId() {
-                return document.getElementById('objectId').value || 'demo-patient-v4';
+                return document.getElementById('objectId').value || 'demo-patient-v5';
               }
 
               function withId(path) {
@@ -142,107 +127,77 @@ export default {
                 await render(res);
               }
 
-              async function postAccess() {
-                const role = document.getElementById('role').value;
-                const actor = document.getElementById('actor').value;
-
-                const res = await fetch(withId('/api/access'), {
+              async function postJson(path, payload) {
+                const res = await fetch(withId(path), {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ role, actor })
+                  body: JSON.stringify(payload)
                 });
-
                 await render(res);
               }
 
-              async function postView() {
-                const role = document.getElementById('role').value;
-                const actor = document.getElementById('actor').value;
-
-                const res = await fetch(withId('/api/view'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ role, actor })
+              async function postProfile() {
+                await postJson('/api/patient/profile', {
+                  fullName: document.getElementById('fullName').value,
+                  email: document.getElementById('email').value,
+                  phone: document.getElementById('phone').value,
+                  preferredChannel: document.getElementById('preferredChannel').value
                 });
-
-                await render(res);
-              }
-
-              async function postBreakGlass() {
-                const actor = document.getElementById('bgActor').value;
-                const reason = document.getElementById('bgReason').value;
-
-                const res = await fetch(withId('/api/break-glass'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ actor, reason })
-                });
-
-                await render(res);
-              }
-
-              async function postAppointment() {
-                const title = document.getElementById('apptTitle').value;
-                const datetime = document.getElementById('apptWhen').value;
-                const location = document.getElementById('apptLocation').value;
-                const notes = document.getElementById('apptNotes').value;
-
-                const res = await fetch(withId('/api/appointments'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ title, datetime, location, notes })
-                });
-
-                await render(res);
-              }
-
-              async function postConfirmAppointment() {
-                const appointmentId = document.getElementById('apptIdAction').value;
-
-                const res = await fetch(withId('/api/appointments/confirm'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ appointmentId })
-                });
-
-                await render(res);
-              }
-
-              async function postCancelAppointment() {
-                const appointmentId = document.getElementById('apptIdAction').value;
-
-                const res = await fetch(withId('/api/appointments/cancel'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ appointmentId })
-                });
-
-                await render(res);
-              }
-
-              async function postRescheduleAppointment() {
-                const appointmentId = document.getElementById('apptIdAction').value;
-
-                const res = await fetch(withId('/api/appointments/reschedule-request'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ appointmentId })
-                });
-
-                await render(res);
               }
 
               async function postAddProvider() {
-                const providerId = document.getElementById('providerId').value;
-                const providerRole = document.getElementById('providerRole').value;
-
-                const res = await fetch(withId('/api/providers/add'), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ providerId, providerRole })
+                await postJson('/api/providers/add', {
+                  providerId: document.getElementById('providerId').value,
+                  providerRole: document.getElementById('providerRole').value
                 });
+              }
 
-                await render(res);
+              async function postAccess() {
+                await postJson('/api/access', {
+                  role: document.getElementById('role').value,
+                  actor: document.getElementById('actor').value
+                });
+              }
+
+              async function postView() {
+                await postJson('/api/view', {
+                  role: document.getElementById('role').value,
+                  actor: document.getElementById('actor').value
+                });
+              }
+
+              async function postBreakGlass() {
+                await postJson('/api/break-glass', {
+                  actor: document.getElementById('bgActor').value,
+                  reason: document.getElementById('bgReason').value
+                });
+              }
+
+              async function postAppointment() {
+                await postJson('/api/appointments', {
+                  title: document.getElementById('apptTitle').value,
+                  datetime: document.getElementById('apptWhen').value,
+                  location: document.getElementById('apptLocation').value,
+                  notes: document.getElementById('apptNotes').value
+                });
+              }
+
+              async function postConfirmAppointment() {
+                await postJson('/api/appointments/confirm', {
+                  appointmentId: document.getElementById('apptIdAction').value
+                });
+              }
+
+              async function postCancelAppointment() {
+                await postJson('/api/appointments/cancel', {
+                  appointmentId: document.getElementById('apptIdAction').value
+                });
+              }
+
+              async function postRescheduleAppointment() {
+                await postJson('/api/appointments/reschedule-request', {
+                  appointmentId: document.getElementById('apptIdAction').value
+                });
               }
             </script>
           </body>
@@ -256,6 +211,19 @@ export default {
 
     if (url.pathname === "/api/patient" && request.method === "GET") {
       return stub.fetch("https://internal/patient");
+    }
+
+    if (url.pathname === "/api/patient/profile" && request.method === "GET") {
+      return stub.fetch("https://internal/patient/profile");
+    }
+
+    if (url.pathname === "/api/patient/profile" && request.method === "POST") {
+      const body = await request.text();
+      return stub.fetch("https://internal/patient/profile", {
+        method: "POST",
+        headers: request.headers,
+        body
+      });
     }
 
     if (url.pathname === "/api/providers/add" && request.method === "POST") {
@@ -422,6 +390,17 @@ export class PatientAgent {
     `);
 
     this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS patient_profile (
+        patient_id TEXT PRIMARY KEY,
+        full_name TEXT,
+        email TEXT,
+        phone TEXT,
+        preferred_channel TEXT,
+        updated_at TEXT
+      )
+    `);
+
+    this.sql.exec(`
       CREATE TABLE IF NOT EXISTS provider_allowlist (
         provider_id TEXT PRIMARY KEY,
         provider_role TEXT,
@@ -465,7 +444,6 @@ export class PatientAgent {
 
   serializePatient(row) {
     if (!row) return null;
-
     return {
       id: row.id ?? null,
       name: row.name ?? null,
@@ -476,6 +454,38 @@ export class PatientAgent {
       created_at: row.created_at ?? null,
       updated_at: row.updated_at ?? null
     };
+  }
+
+  getProfile() {
+    const rows = [...this.sql.exec(`SELECT * FROM patient_profile WHERE patient_id = ?`, "demo")];
+    const row = rows[0] || null;
+    if (!row) return null;
+    return {
+      patient_id: row.patient_id,
+      full_name: row.full_name,
+      email: row.email,
+      phone: row.phone,
+      preferred_channel: row.preferred_channel,
+      updated_at: row.updated_at
+    };
+  }
+
+  ensureProfileExists() {
+    const existing = this.getProfile();
+    if (existing) return existing;
+
+    this.sql.exec(
+      `INSERT INTO patient_profile (patient_id, full_name, email, phone, preferred_channel, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      "demo",
+      "Demo Patient",
+      "demo.patient@example.com",
+      "+17875550199",
+      "email",
+      this.now()
+    );
+
+    return this.getProfile();
   }
 
   log(type, actor, details = {}) {
@@ -493,60 +503,6 @@ export class PatientAgent {
     return rows[0] || null;
   }
 
-  listAppointments() {
-    return [
-      ...this.sql.exec(`SELECT * FROM appointments ORDER BY datetime ASC`)
-    ].map((row) => ({
-      id: row.id,
-      title: row.title,
-      datetime: row.datetime,
-      location: row.location,
-      notes: row.notes,
-      status: row.status,
-      created_at: row.created_at,
-      updated_at: row.updated_at
-    }));
-  }
-
-  listProviders() {
-    return [
-      ...this.sql.exec(
-        `SELECT provider_id, provider_role, created_at
-         FROM provider_allowlist
-         ORDER BY provider_id ASC`
-      )
-    ].map((row) => ({
-      provider_id: row.provider_id,
-      provider_role: row.provider_role,
-      created_at: row.created_at
-    }));
-  }
-
-  listRecentAccess(limit = 20) {
-    return [
-      ...this.sql.exec(
-        `SELECT id, type, actor, details_json, timestamp
-         FROM audit
-         WHERE type IN ('access_granted','access_denied','misuse_flagged','break_glass')
-         ORDER BY id DESC
-         LIMIT ?`,
-        limit
-      )
-    ].map((row) => ({
-      id: row.id,
-      type: row.type,
-      actor: row.actor,
-      details: (() => {
-        try {
-          return row.details_json ? JSON.parse(row.details_json) : {};
-        } catch {
-          return {};
-        }
-      })(),
-      timestamp: row.timestamp
-    }));
-  }
-
   ensurePatientExists() {
     const existing = this.getPatientRow();
     if (existing) return existing;
@@ -555,14 +511,7 @@ export class PatientAgent {
 
     this.sql.exec(
       `INSERT INTO patient (
-        id,
-        name,
-        emergency_access_until,
-        failed_attempts,
-        misuse_flag,
-        init_locked,
-        created_at,
-        updated_at
+        id, name, emergency_access_until, failed_attempts, misuse_flag, init_locked, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       "demo",
       "Demo Patient",
@@ -583,7 +532,6 @@ export class PatientAgent {
 
     if (count === 0) {
       const now = this.now();
-
       this.sql.exec(
         `INSERT OR REPLACE INTO provider_allowlist (provider_id, provider_role, created_at)
          VALUES (?, ?, ?)`,
@@ -591,7 +539,6 @@ export class PatientAgent {
         "authorized_provider",
         now
       );
-
       this.sql.exec(
         `INSERT OR REPLACE INTO provider_allowlist (provider_id, provider_role, created_at)
          VALUES (?, ?, ?)`,
@@ -616,6 +563,20 @@ export class PatientAgent {
     return String(rows[0].provider_role) === String(providerRole);
   }
 
+  listProviders() {
+    return [
+      ...this.sql.exec(
+        `SELECT provider_id, provider_role, created_at
+         FROM provider_allowlist
+         ORDER BY provider_id ASC`
+      )
+    ].map((row) => ({
+      provider_id: row.provider_id,
+      provider_role: row.provider_role,
+      created_at: row.created_at
+    }));
+  }
+
   appointmentId() {
     return crypto.randomUUID();
   }
@@ -631,91 +592,148 @@ export class PatientAgent {
     return rows[0] || null;
   }
 
+  serializeAppointment(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      title: row.title,
+      datetime: row.datetime,
+      location: row.location,
+      notes: row.notes,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    };
+  }
+
+  listAppointments() {
+    return [
+      ...this.sql.exec(`SELECT * FROM appointments ORDER BY datetime ASC`)
+    ].map((row) => this.serializeAppointment(row));
+  }
+
+  listRecentAccess(limit = 20) {
+    return [
+      ...this.sql.exec(
+        `SELECT id, type, actor, details_json, timestamp
+         FROM audit
+         WHERE type IN ('access_granted','access_denied','misuse_flagged','break_glass','break_glass_expired')
+         ORDER BY id DESC
+         LIMIT ?`,
+        limit
+      )
+    ].map((row) => ({
+      id: row.id,
+      type: row.type,
+      actor: row.actor,
+      details: (() => {
+        try {
+          return row.details_json ? JSON.parse(row.details_json) : {};
+        } catch {
+          return {};
+        }
+      })(),
+      timestamp: row.timestamp
+    }));
+  }
+
+  listReminderRows(appointmentId = null) {
+    if (appointmentId) {
+      return [
+        ...this.sql.exec(
+          `SELECT id, appointment_id, remind_at, sent_at, created_at
+           FROM reminders
+           WHERE appointment_id = ?
+           ORDER BY remind_at ASC`,
+          appointmentId
+        )
+      ].map((row) => ({
+        id: row.id,
+        appointment_id: row.appointment_id,
+        remind_at: row.remind_at,
+        sent_at: row.sent_at,
+        created_at: row.created_at
+      }));
+    }
+
+    return [
+      ...this.sql.exec(
+        `SELECT id, appointment_id, remind_at, sent_at, created_at
+         FROM reminders
+         ORDER BY remind_at ASC`
+      )
+    ].map((row) => ({
+      id: row.id,
+      appointment_id: row.appointment_id,
+      remind_at: row.remind_at,
+      sent_at: row.sent_at,
+      created_at: row.created_at
+    }));
+  }
+
+  transitionAllowed(currentStatus, targetAction) {
+    const rules = {
+      scheduled: ["confirm", "cancel", "reschedule_request"],
+      confirmed: ["cancel", "reschedule_request"],
+      cancelled: [],
+      reschedule_requested: [],
+      completed: []
+    };
+
+    return (rules[currentStatus] || []).includes(targetAction);
+  }
+
+  transitionError(currentStatus, targetAction) {
+    return {
+      ok: false,
+      error: "Invalid appointment transition",
+      current_status: currentStatus,
+      attempted_action: targetAction
+    };
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/init" && request.method === "POST") {
-      return this.handleInit();
-    }
-
-    if (url.pathname === "/patient" && request.method === "GET") {
-      return this.handlePatient();
-    }
-
-    if (url.pathname === "/providers/add" && request.method === "POST") {
-      return this.handleAddProvider(request);
-    }
-
-    if (url.pathname === "/providers/list" && request.method === "GET") {
-      return this.handleListProviders();
-    }
-
-    if (url.pathname === "/access" && request.method === "POST") {
-      return this.handleAccess(request);
-    }
-
-    if (url.pathname === "/view" && request.method === "POST") {
-      return this.handleView(request);
-    }
-
-    if (url.pathname === "/break-glass" && request.method === "POST") {
-      return this.handleBreakGlass(request);
-    }
-
-    if (url.pathname === "/appointments" && request.method === "POST") {
-      return this.handleCreateAppointment(request);
-    }
-
-    if (url.pathname === "/appointments/confirm" && request.method === "POST") {
-      return this.handleConfirmAppointment(request);
-    }
-
-    if (url.pathname === "/appointments/cancel" && request.method === "POST") {
-      return this.handleCancelAppointment(request);
-    }
-
-    if (url.pathname === "/appointments/reschedule-request" && request.method === "POST") {
-      return this.handleRescheduleRequest(request);
-    }
-
-    if (url.pathname === "/reminders/preview" && request.method === "GET") {
-      return this.handleReminderPreview();
-    }
-
-    if (url.pathname === "/reminders/run-now" && request.method === "POST") {
-      return this.handleRunRemindersNow();
-    }
-
-    if (url.pathname === "/audit" && request.method === "GET") {
-      return this.handleAudit();
-    }
+    if (url.pathname === "/init" && request.method === "POST") return this.handleInit();
+    if (url.pathname === "/patient" && request.method === "GET") return this.handlePatient();
+    if (url.pathname === "/patient/profile" && request.method === "GET") return this.handleGetProfile();
+    if (url.pathname === "/patient/profile" && request.method === "POST") return this.handleUpdateProfile(request);
+    if (url.pathname === "/providers/add" && request.method === "POST") return this.handleAddProvider(request);
+    if (url.pathname === "/providers/list" && request.method === "GET") return this.handleListProviders();
+    if (url.pathname === "/access" && request.method === "POST") return this.handleAccess(request);
+    if (url.pathname === "/view" && request.method === "POST") return this.handleView(request);
+    if (url.pathname === "/break-glass" && request.method === "POST") return this.handleBreakGlass(request);
+    if (url.pathname === "/appointments" && request.method === "POST") return this.handleCreateAppointment(request);
+    if (url.pathname === "/appointments/confirm" && request.method === "POST") return this.handleConfirmAppointment(request);
+    if (url.pathname === "/appointments/cancel" && request.method === "POST") return this.handleCancelAppointment(request);
+    if (url.pathname === "/appointments/reschedule-request" && request.method === "POST") return this.handleRescheduleRequest(request);
+    if (url.pathname === "/reminders/preview" && request.method === "GET") return this.handleReminderPreview();
+    if (url.pathname === "/reminders/run-now" && request.method === "POST") return this.handleRunRemindersNow();
+    if (url.pathname === "/audit" && request.method === "GET") return this.handleAudit();
 
     return new Response("DO route not found", { status: 404 });
   }
 
   async handleInit() {
     const patient = this.ensurePatientExists();
+    this.ensureProfileExists();
     this.ensureSeedProviders();
 
     if (Number(patient.init_locked) === 1) {
-      return Response.json(
-        {
-          ok: false,
-          error: "Initialization locked",
-          message: "System has already been initialized for this object."
-        },
-        { status: 409 }
-      );
+      return Response.json({
+        ok: false,
+        error: "Initialization locked",
+        message: "System has already been initialized for this object."
+      }, { status: 409 });
     }
-
-    const now = this.now();
 
     this.sql.exec(
       `UPDATE patient
        SET init_locked = 1,
            updated_at = ?
        WHERE id = ?`,
-      now,
+      this.now(),
       "demo"
     );
 
@@ -729,19 +747,70 @@ export class PatientAgent {
     return Response.json({
       ok: true,
       patient: this.serializePatient(this.getPatientRow()),
+      profile: this.getProfile(),
       providers: this.listProviders()
     });
   }
 
   async handlePatient() {
     const patient = this.ensurePatientExists();
+    this.ensureProfileExists();
 
     return Response.json({
       ok: true,
       patient: this.serializePatient(patient),
+      profile: this.getProfile(),
       appointments: this.listAppointments(),
       recent_access: this.listRecentAccess(20),
       providers: this.listProviders()
+    });
+  }
+
+  async handleGetProfile() {
+    this.ensurePatientExists();
+    this.ensureProfileExists();
+
+    return Response.json({
+      ok: true,
+      profile: this.getProfile()
+    });
+  }
+
+  async handleUpdateProfile(request) {
+    this.ensurePatientExists();
+    this.ensureProfileExists();
+
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const fullName = (body.fullName || "").trim() || "Demo Patient";
+    const email = (body.email || "").trim();
+    const phone = (body.phone || "").trim();
+    const preferredChannel = (body.preferredChannel || "email").trim();
+
+    this.sql.exec(
+      `UPDATE patient_profile
+       SET full_name = ?, email = ?, phone = ?, preferred_channel = ?, updated_at = ?
+       WHERE patient_id = ?`,
+      fullName,
+      email,
+      phone,
+      preferredChannel,
+      this.now(),
+      "demo"
+    );
+
+    this.log("profile_updated", "patient", {
+      preferred_channel: preferredChannel
+    });
+
+    return Response.json({
+      ok: true,
+      profile: this.getProfile()
     });
   }
 
@@ -759,10 +828,7 @@ export class PatientAgent {
     const providerRole = (body.providerRole || "").trim();
 
     if (!providerId || !providerRole) {
-      return Response.json(
-        { ok: false, error: "providerId and providerRole required" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "providerId and providerRole required" }, { status: 400 });
     }
 
     this.sql.exec(
@@ -886,6 +952,7 @@ export class PatientAgent {
 
   async handleView(request) {
     this.ensurePatientExists();
+    this.ensureProfileExists();
     this.ensureSeedProviders();
 
     let body = {};
@@ -897,8 +964,8 @@ export class PatientAgent {
 
     const role = body.role || "unauthorized";
     const actor = body.actor || "unknown";
-
     const patient = this.serializePatient(this.getPatientRow());
+    const profile = this.getProfile();
     const appointments = this.listAppointments();
 
     if (role === "patient") {
@@ -908,13 +975,9 @@ export class PatientAgent {
         actor,
         visible: {
           patient,
+          profile,
           appointments,
-          recent_access: this.listRecentAccess(20),
-          accountability: {
-            patient: "Can review access history and appointment state.",
-            provider: "Access attempts are attributable.",
-            system: "All exception flows are logged."
-          }
+          recent_access: this.listRecentAccess(20)
         }
       });
     }
@@ -927,7 +990,7 @@ export class PatientAgent {
         visible: {
           patient: {
             id: patient.id,
-            name: patient.name,
+            name: profile?.full_name || patient.name,
             emergency_access_until: patient.emergency_access_until
           },
           appointments: appointments.map((a) => ({
@@ -937,7 +1000,9 @@ export class PatientAgent {
             location: a.location,
             status: a.status
           })),
-          note: "Authorized provider view is intentionally limited in this beta."
+          contact: {
+            preferred_channel: profile?.preferred_channel || "email"
+          }
         }
       });
     }
@@ -953,8 +1018,7 @@ export class PatientAgent {
             misuse_flag: patient.misuse_flag,
             failed_attempts: patient.failed_attempts
           },
-          recent_access: this.listRecentAccess(50),
-          note: "Audit view emphasizes governance and behavior tracking."
+          recent_access: this.listRecentAccess(50)
         }
       });
     }
@@ -980,8 +1044,23 @@ export class PatientAgent {
     const actor = body.actor || "unknown-emergency-actor";
     const reason = (body.reason || "").trim();
 
-    if (!reason) {
-      return Response.json({ ok: false, error: "Reason required" }, { status: 400 });
+    if (!reason || reason.length < 12) {
+      return Response.json({
+        ok: false,
+        error: "Reason required and must be at least 12 characters"
+      }, { status: 400 });
+    }
+
+    const patient = this.getPatientRow();
+    if (patient && patient.emergency_access_until) {
+      const expiryTs = new Date(String(patient.emergency_access_until)).getTime();
+      if (!Number.isNaN(expiryTs) && expiryTs > Date.now()) {
+        return Response.json({
+          ok: false,
+          error: "Break-glass already active",
+          expires: patient.emergency_access_until
+        }, { status: 409 });
+      }
     }
 
     const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
@@ -1010,6 +1089,7 @@ export class PatientAgent {
 
   async handleCreateAppointment(request) {
     this.ensurePatientExists();
+    this.ensureProfileExists();
 
     let body = {};
     try {
@@ -1024,10 +1104,7 @@ export class PatientAgent {
     const notes = (body.notes || "").trim();
 
     if (!datetime) {
-      return Response.json(
-        { ok: false, error: "Appointment datetime required" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Appointment datetime required" }, { status: 400 });
     }
 
     const apptId = this.appointmentId();
@@ -1078,43 +1155,9 @@ export class PatientAgent {
 
     return Response.json({
       ok: true,
-      appointment: this.listAppointments().find((a) => a.id === apptId),
+      appointment: this.serializeAppointment(this.getAppointment(apptId)),
       reminders_preview: this.listReminderRows(apptId)
     });
-  }
-
-  listReminderRows(appointmentId = null) {
-    if (appointmentId) {
-      return [
-        ...this.sql.exec(
-          `SELECT id, appointment_id, remind_at, sent_at, created_at
-           FROM reminders
-           WHERE appointment_id = ?
-           ORDER BY remind_at ASC`,
-          appointmentId
-        )
-      ].map((row) => ({
-        id: row.id,
-        appointment_id: row.appointment_id,
-        remind_at: row.remind_at,
-        sent_at: row.sent_at,
-        created_at: row.created_at
-      }));
-    }
-
-    return [
-      ...this.sql.exec(
-        `SELECT id, appointment_id, remind_at, sent_at, created_at
-         FROM reminders
-         ORDER BY remind_at ASC`
-      )
-    ].map((row) => ({
-      id: row.id,
-      appointment_id: row.appointment_id,
-      remind_at: row.remind_at,
-      sent_at: row.sent_at,
-      created_at: row.created_at
-    }));
   }
 
   async handleConfirmAppointment(request) {
@@ -1127,9 +1170,10 @@ export class PatientAgent {
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
+    if (!appt) return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
 
-    if (!appt) {
-      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
+    if (!this.transitionAllowed(String(appt.status), "confirm")) {
+      return Response.json(this.transitionError(String(appt.status), "confirm"), { status: 409 });
     }
 
     this.sql.exec(
@@ -1145,7 +1189,7 @@ export class PatientAgent {
 
     return Response.json({
       ok: true,
-      appointment: this.getAppointment(appointmentId)
+      appointment: this.serializeAppointment(this.getAppointment(appointmentId))
     });
   }
 
@@ -1159,9 +1203,10 @@ export class PatientAgent {
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
+    if (!appt) return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
 
-    if (!appt) {
-      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
+    if (!this.transitionAllowed(String(appt.status), "cancel")) {
+      return Response.json(this.transitionError(String(appt.status), "cancel"), { status: 409 });
     }
 
     this.sql.exec(
@@ -1177,7 +1222,7 @@ export class PatientAgent {
 
     return Response.json({
       ok: true,
-      appointment: this.getAppointment(appointmentId)
+      appointment: this.serializeAppointment(this.getAppointment(appointmentId))
     });
   }
 
@@ -1191,9 +1236,10 @@ export class PatientAgent {
 
     const appointmentId = body.appointmentId || "";
     const appt = this.getAppointment(appointmentId);
+    if (!appt) return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
 
-    if (!appt) {
-      return Response.json({ ok: false, error: "Appointment not found" }, { status: 404 });
+    if (!this.transitionAllowed(String(appt.status), "reschedule_request")) {
+      return Response.json(this.transitionError(String(appt.status), "reschedule_request"), { status: 409 });
     }
 
     this.sql.exec(
@@ -1209,7 +1255,7 @@ export class PatientAgent {
 
     return Response.json({
       ok: true,
-      appointment: this.getAppointment(appointmentId)
+      appointment: this.serializeAppointment(this.getAppointment(appointmentId))
     });
   }
 
@@ -1244,6 +1290,7 @@ export class PatientAgent {
       )
     ];
 
+    const profile = this.getProfile();
     const processed = [];
 
     for (const row of dueRows) {
@@ -1265,7 +1312,13 @@ export class PatientAgent {
         title: row.title,
         datetime: row.datetime,
         location: row.location,
-        status: row.status
+        status: row.status,
+        contact: {
+          full_name: profile?.full_name || null,
+          email: profile?.email || null,
+          phone: profile?.phone || null,
+          preferred_channel: profile?.preferred_channel || "none"
+        }
       };
 
       let delivery = {
@@ -1277,9 +1330,7 @@ export class PatientAgent {
         try {
           const res = await fetch(this.env.NOTIFY_WEBHOOK_URL, {
             method: "POST",
-            headers: {
-              "content-type": "application/json"
-            },
+            headers: { "content-type": "application/json" },
             body: JSON.stringify(payload)
           });
 
