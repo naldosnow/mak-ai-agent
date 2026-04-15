@@ -7,8 +7,117 @@ export default {
 
     if (url.pathname === "/") {
       return html(`
-        <h1>MAK Beta V2</h1>
-        <p>Governed access, break-glass, misuse flagging, and auditability.</p>
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>MAK Beta V2</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 20px;
+                line-height: 1.45;
+              }
+              .card {
+                border: 1px solid #ccc;
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 16px;
+              }
+              button, select, input, textarea {
+                width: 100%;
+                margin: 8px 0;
+                padding: 12px;
+                font-size: 16px;
+                box-sizing: border-box;
+              }
+              textarea {
+                min-height: 90px;
+              }
+              pre {
+                background: #111;
+                color: #f1f1f1;
+                padding: 12px;
+                border-radius: 10px;
+                white-space: pre-wrap;
+                word-break: break-word;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>MAK Beta V2</h1>
+              <p>Governed access, break-glass, misuse flagging, and auditability.</p>
+            </div>
+
+            <div class="card">
+              <h2>System</h2>
+              <button onclick="callRoute('/api/init', 'POST')">POST /api/init</button>
+              <button onclick="callRoute('/api/patient', 'GET')">GET /api/patient</button>
+              <button onclick="callRoute('/api/audit', 'GET')">GET /api/audit</button>
+            </div>
+
+            <div class="card">
+              <h2>Access Test</h2>
+              <select id="role">
+                <option value="authorized_provider">authorized_provider</option>
+                <option value="patient">patient</option>
+                <option value="unauthorized">unauthorized</option>
+              </select>
+              <input id="actor" value="dr-demo-001" />
+              <button onclick="postAccess()">POST /api/access</button>
+            </div>
+
+            <div class="card">
+              <h2>Break-Glass</h2>
+              <input id="bgActor" value="emergency-room-1" />
+              <textarea id="bgReason">Unresponsive patient during emergency intake.</textarea>
+              <button onclick="postBreakGlass()">POST /api/break-glass</button>
+            </div>
+
+            <pre id="out">Ready.</pre>
+
+            <script>
+              async function render(res) {
+                const text = await res.text();
+                document.getElementById('out').textContent = text;
+              }
+
+              async function callRoute(path, method) {
+                const res = await fetch(path, { method });
+                await render(res);
+              }
+
+              async function postAccess() {
+                const role = document.getElementById('role').value;
+                const actor = document.getElementById('actor').value;
+
+                const res = await fetch('/api/access', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ role, actor })
+                });
+
+                await render(res);
+              }
+
+              async function postBreakGlass() {
+                const actor = document.getElementById('bgActor').value;
+                const reason = document.getElementById('bgReason').value;
+
+                const res = await fetch('/api/break-glass', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ actor, reason })
+                });
+
+                await render(res);
+              }
+            </script>
+          </body>
+        </html>
       `);
     }
 
@@ -16,19 +125,29 @@ export default {
       return stub.fetch("https://internal/init", { method: "POST" });
     }
 
-    if (url.pathname === "/api/patient") {
+    if (url.pathname === "/api/patient" && request.method === "GET") {
       return stub.fetch("https://internal/patient");
     }
 
     if (url.pathname === "/api/access" && request.method === "POST") {
-      return stub.fetch("https://internal/access", request);
+      const body = await request.text();
+      return stub.fetch("https://internal/access", {
+        method: "POST",
+        headers: request.headers,
+        body
+      });
     }
 
     if (url.pathname === "/api/break-glass" && request.method === "POST") {
-      return stub.fetch("https://internal/break-glass", request);
+      const body = await request.text();
+      return stub.fetch("https://internal/break-glass", {
+        method: "POST",
+        headers: request.headers,
+        body
+      });
     }
 
-    if (url.pathname === "/api/audit") {
+    if (url.pathname === "/api/audit" && request.method === "GET") {
       return stub.fetch("https://internal/audit");
     }
 
@@ -37,8 +156,9 @@ export default {
 };
 
 export class PatientAgent {
-  constructor(ctx) {
+  constructor(ctx, env) {
     this.ctx = ctx;
+    this.env = env;
     this.sql = ctx.storage.sql;
     this.initTables();
   }
@@ -109,8 +229,16 @@ export class PatientAgent {
     const now = this.now();
 
     this.sql.exec(
-      `INSERT INTO patient (id, name, emergency_access_until, failed_attempts, misuse_flag, init_locked, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO patient (
+        id,
+        name,
+        emergency_access_until,
+        failed_attempts,
+        misuse_flag,
+        init_locked,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       "demo",
       "Demo Patient",
       null,
@@ -131,7 +259,7 @@ export class PatientAgent {
       return this.handleInit();
     }
 
-    if (url.pathname === "/patient") {
+    if (url.pathname === "/patient" && request.method === "GET") {
       return this.handlePatient();
     }
 
@@ -143,7 +271,7 @@ export class PatientAgent {
       return this.handleBreakGlass(request);
     }
 
-    if (url.pathname === "/audit") {
+    if (url.pathname === "/audit" && request.method === "GET") {
       return this.handleAudit();
     }
 
@@ -154,23 +282,30 @@ export class PatientAgent {
     const patient = this.ensurePatientExists();
 
     if (Number(patient.init_locked) === 1) {
-      return Response.json({
-        ok: false,
-        error: "Initialization locked"
-      }, { status: 409 });
+      return Response.json(
+        {
+          ok: false,
+          error: "Initialization locked",
+          message: "System has already been initialized for this object."
+        },
+        { status: 409 }
+      );
     }
 
     const now = this.now();
 
     this.sql.exec(
       `UPDATE patient
-       SET init_locked = 1, updated_at = ?
+       SET init_locked = 1,
+           updated_at = ?
        WHERE id = ?`,
       now,
       "demo"
     );
 
-    this.log("system_init", "system");
+    this.log("system_init", "system", {
+      locked_after_init: true
+    });
 
     return Response.json({
       ok: true,
@@ -194,21 +329,34 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+      return Response.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400 }
+      );
     }
 
     const role = body.role || "unauthorized";
     const actor = body.actor || "unknown";
-
     let allowed = false;
+    let reason = "unauthorized_role";
 
-    if (role === "patient" || role === "authorized_provider") {
+    if (role === "patient") {
       allowed = true;
+      reason = "patient_self_access";
+    }
+
+    if (role === "authorized_provider") {
+      allowed = true;
+      reason = "authorized_provider_access";
     }
 
     if (!allowed) {
       this.sql.exec(
-        `UPDATE patient SET failed_attempts = failed_attempts + 1 WHERE id = ?`,
+        `UPDATE patient
+         SET failed_attempts = failed_attempts + 1,
+             updated_at = ?
+         WHERE id = ?`,
+        this.now(),
         "demo"
       );
 
@@ -216,32 +364,50 @@ export class PatientAgent {
 
       if (Number(updated.failed_attempts) >= 3) {
         this.sql.exec(
-          `UPDATE patient SET misuse_flag = 1 WHERE id = ?`,
+          `UPDATE patient
+           SET misuse_flag = 1,
+               updated_at = ?
+           WHERE id = ?`,
+          this.now(),
           "demo"
         );
 
-        this.log("misuse_flagged", "system");
+        this.log("misuse_flagged", "system", {
+          actor,
+          threshold: 3,
+          failed_attempts: Number(updated.failed_attempts)
+        });
       }
 
-      this.log("access_denied", actor);
+      this.log("access_denied", actor, { role, reason });
 
       return Response.json({
         ok: true,
         allowed: false,
+        role,
+        actor,
+        reason,
         patient: this.serializePatient(this.getPatientRow())
       });
     }
 
     this.sql.exec(
-      `UPDATE patient SET failed_attempts = 0 WHERE id = ?`,
+      `UPDATE patient
+       SET failed_attempts = 0,
+           updated_at = ?
+       WHERE id = ?`,
+      this.now(),
       "demo"
     );
 
-    this.log("access_granted", actor);
+    this.log("access_granted", actor, { role, reason });
 
     return Response.json({
       ok: true,
       allowed: true,
+      role,
+      actor,
+      reason,
       patient: this.serializePatient(this.getPatientRow())
     });
   }
@@ -253,30 +419,40 @@ export class PatientAgent {
     try {
       body = await request.json();
     } catch {
-      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+      return Response.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400 }
+      );
     }
 
+    const actor = body.actor || "unknown-emergency-actor";
     const reason = (body.reason || "").trim();
 
     if (!reason) {
-      return Response.json({
-        ok: false,
-        error: "Reason required"
-      }, { status: 400 });
+      return Response.json(
+        { ok: false, error: "Reason required" },
+        { status: 400 }
+      );
     }
 
     const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     this.sql.exec(
-      `UPDATE patient SET emergency_access_until = ? WHERE id = ?`,
+      `UPDATE patient
+       SET emergency_access_until = ?,
+           updated_at = ?
+       WHERE id = ?`,
       expires,
+      this.now(),
       "demo"
     );
 
-    this.log("break_glass", "emergency");
+    this.log("break_glass", actor, { reason, expires });
 
     return Response.json({
       ok: true,
+      actor,
+      reason,
       expires,
       patient: this.serializePatient(this.getPatientRow())
     });
@@ -287,7 +463,7 @@ export class PatientAgent {
 
     return Response.json({
       ok: true,
-      audit: rows.map(r => ({
+      audit: rows.map((r) => ({
         id: r.id,
         type: r.type,
         actor: r.actor,
